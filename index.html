@@ -5,36 +5,36 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, sans-serif; }
-  #wrap { width: 100%; border-radius: 10px; overflow: hidden; border: 1px solid #ddd; }
-  #map { height: 500px; width: 100%; background: #d4e8f0; }
-  #controls { background: #fff; border-top: 1px solid #ddd; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
-  #yearLabel { font-size: 16px; font-weight: bold; text-align: center; color: #222; }
+  body { font-family: Arial, sans-serif; background: #1a1a2e; }
+  #wrap { width: 100%; border-radius: 10px; overflow: hidden; border: 1px solid #333; }
+  #map { height: 500px; width: 100%; background: #1a1a2e; }
+  #controls { background: #1f1f2e; border-top: 1px solid #333; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+  #yearLabel { font-size: 16px; font-weight: bold; text-align: center; color: #eee; }
   .ctrl-row { display: flex; align-items: center; gap: 12px; }
-  .ctrl-row span { font-size: 12px; color: #888; min-width: 32px; text-align: center; }
+  .ctrl-row span { font-size: 12px; color: #aaa; min-width: 32px; text-align: center; }
   #slider { flex: 1; }
-  #playBtn { display: block; margin: 0 auto; padding: 6px 20px; font-size: 13px; border-radius: 6px; border: 1px solid #bbb; background: #fff; color: #222; cursor: pointer; }
-  #playBtn:hover { background: #f5f5f5; }
-  #info { font-size: 12px; color: #888; text-align: center; }
+  #playBtn { display: block; margin: 0 auto; padding: 6px 20px; font-size: 13px; border-radius: 6px; border: 1px solid #555; background: #2a2a3e; color: #eee; cursor: pointer; }
+  #playBtn:hover { background: #3a3a4e; }
+  #info { font-size: 12px; color: #aaa; text-align: center; }
 
   .map-legend {
-    background: rgba(255,255,255,0.92);
+    background: rgba(20,20,35,0.88);
     border-radius: 8px;
     padding: 10px 12px;
     font-size: 11px;
-    color: #333;
+    color: #ccc;
     line-height: 1.6;
-    box-shadow: 0 1px 5px rgba(0,0,0,0.2);
+    box-shadow: 0 1px 5px rgba(0,0,0,0.5);
     min-width: 160px;
   }
-  .map-legend b { font-size: 12px; display: block; margin-bottom: 5px; color: #111; }
+  .map-legend b { font-size: 12px; display: block; margin-bottom: 5px; color: #eee; }
   .leg-row { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; }
   .leg-line { width: 20px; height: 3px; border-radius: 2px; flex-shrink: 0; }
-  .leg-sep { border-top: 1px solid #ddd; margin: 6px 0; }
+  .leg-sep { border-top: 1px solid #444; margin: 6px 0; }
   .leg-circles-row { display: flex; align-items: flex-end; gap: 8px; margin-top: 4px; }
   .leg-circle-wrap { display: flex; flex-direction: column; align-items: center; gap: 3px; }
-  .leg-circle { border-radius: 50%; background: rgba(204,51,51,0.6); border: 1px solid #8B0000; flex-shrink: 0; }
-  .leg-circle-label { font-size: 9px; color: #666; }
+  .leg-circle { border-radius: 50%; background: rgba(204,51,51,0.6); border: 1px solid #cc3333; flex-shrink: 0; }
+  .leg-circle-label { font-size: 9px; color: #999; }
 </style>
 </head>
 <body>
@@ -69,19 +69,22 @@ script.onerror = function() {
 };
 document.head.appendChild(script);
 
-// Cercles plus petits : min 2px, max 15px, multiplicateur 1.2
 function getRadius(deaths) {
   if (!deaths || deaths <= 0) return 2;
   return Math.max(2, Math.min(15, Math.sqrt(deaths) * 1.2));
 }
 
 function initMap() {
-  var map = L.map("map").setView([38, 15], 5);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: "&copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a>"
+  var map = L.map("map", { zoomControl: true }).setView([38, 15], 5);
+
+  // Fond de carte sombre CartoDB Dark Matter (gratuit, sans clé API)
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+    attribution: "&copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> &copy; <a href='https://carto.com/'>CARTO</a>",
+    subdomains: "abcd",
+    maxZoom: 19
   }).addTo(map);
 
-  // Légende intégrée comme contrôle Leaflet
+  // Légende intégrée dans la carte
   var legend = L.control({ position: "bottomleft" });
   legend.onAdd = function() {
     var div = L.DomUtil.create("div", "map-legend");
