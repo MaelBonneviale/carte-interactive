@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; }
+  #wrap { width: 100%; border-radius: 10px; overflow: hidden; border: 1px solid #ddd; }
+  #map { height: 500px; width: 100%; background: #d4e8f0; }
+  #controls { background: #fff; border-top: 1px solid #ddd; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+  #yearLabel { font-size: 16px; font-weight: bold; text-align: center; color: #222; }
+  .ctrl-row { display: flex; align-items: center; gap: 12px; }
+  .ctrl-row span { font-size: 12px; color: #888; min-width: 32px; text-align: center; }
+  #slider { flex: 1; }
+  #playBtn { display: block; margin: 0 auto; padding: 6px 20px; font-size: 13px; border-radius: 6px; border: 1px solid #bbb; background: #fff; color: #222; cursor: pointer; }
+  #playBtn:hover { background: #f5f5f5; }
+  #info { font-size: 12px; color: #888; text-align: center; }
+
+  /* Légende flottante dans la carte */
+  .map-legend {
+    background: rgba(255,255,255,0.92);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 11px;
+    color: #333;
+    line-height: 1.6;
+    box-shadow: 0 1px 5px rgba(0,0,0,0.2);
+    min-width: 160px;
+  }
+  .map-legend b { font-size: 12px; display: block; margin-bottom: 5px; color: #111; }
+  .leg-row { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; }
+  .leg-line { width: 20px; height: 3px; border-radius: 2px; flex-shrink: 0; }
+  .leg-sep { border-top: 1px solid #ddd; margin: 6px 0; }
+  .leg-circles-row { display: flex; align-items: flex-end; gap: 8px; margin-top: 4px; }
+  .leg-circle-wrap { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .leg-circle { border-radius: 50%; background: rgba(204,51,51,0.6); border: 1px solid #8B0000; flex-shrink: 0; }
+  .leg-circle-label { font-size: 9px; color: #666; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="map"></div>
+  <div id="controls">
+    <div id="yearLabel">Chargement…</div>
+    <div class="ctrl-row">
+      <span id="minY"></span>
+      <input type="range" id="slider" step="1" disabled/>
+      <span id="maxY"></span>
+    </div>
+    <button id="playBtn" disabled>▶ Lecture</button>
+    <div id="info"></div>
+  </div>
+</div>
+
+<script>
+var cssLink = document.createElement("link");
+cssLink.rel = "stylesheet";
+cssLink.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+document.head.appendChild(cssLink);
+
+var script = document.createElement("script");
+script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+script.onload = function() { initMap(); };
+script.onerror = function() {
+  var s2 = document.createElement("script");
+  s2.src = "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js";
+  s2.onload = function() { initMap(); };
+  document.head.appendChild(s2);
+};
+document.head.appendChild(script);
+
+function getRadius(deaths) {
+  if (!deaths || deaths <= 0) return 4;
+  return Math.max(4, Math.min(30, Math.sqrt(deaths) * 2.5));
+}
+
+function initMap() {
+  var map = L.map("map").setView([38, 15], 5);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "&copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a>"
+  }).addTo(map);
+
+  // Légende intégrée comme contrôle Leaflet (toujours visible dans la carte)
+  var legend = L.control({ position: "bottomleft" });
+  legend.onAdd = function() {
+    var div = L.DomUtil.create("div", "map-legend");
+    div.innerHTML =
+      "<b>Routes migratoires</b>" +
+      "<div class='leg-row'><div class='leg-line' style='background:#E74C3C'></div> Méd. centrale</div>" +
+      "<div class='leg-row'><div class='leg-line' style='background:#2E86C1'></div> Méd. orientale</div>" +
+      "<div class='leg-row'><div class='leg-line' style='background:#E67E22'></div> Méd. occidentale</div>" +
+      "<div class='leg-sep'></div>" +
+      "<b>Incidents (nb de morts)</b>" +
+      "<div class='leg-circles-row'>" +
+        "<div class='leg-circle-wrap'><div class='leg-circle' style='width:8px;height:8px;'></div><span class='leg-circle-label'>1–5</span></div>" +
+        "<div class='leg-circle-wrap'><div class='leg-circle' style='width:14px;height:14px;'></div><span class='leg-circle-label'>6–20</span></div>" +
+        "<div class='leg-circle-wrap'><div class='leg-circle' style='width:22px;height:22px;'></div><span class='leg-circle-label'>21–100</span></div>" +
+        "<div class='leg-circle-wrap'><div class='leg-circle' style='width:30px;height:30px;'></div><span class='leg-circle-label'>100+</span></div>" +
+      "</div>";
+    return div;
+  };
+  legend.addTo(map);
+
+  var routeLayer    = L.layerGroup().addTo(map);
+  var incidentLayer = L.layerGroup().addTo(map);
+
+  var DATA_URL = "https://cdn.jsdelivr.net/gh/MaelBonneviale/carte-interactive@main/mapdata.json";
+
+  fetch(DATA_URL)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var ds = data.datasets;
+
+      // DS0 : infos par route
+      var d0 = ds[0].data;
+      var f0 = d0.fields.map(function(f) { return f.name; });
+      var routeInfo = {};
+      d0.allData.forEach(function(row) {
+        var obj = {}; f0.forEach(function(f, i) { obj[f] = row[i]; });
+        if (!routeInfo[obj.route]) routeInfo[obj.route] = obj;
+      });
+
+      // DS1 : segments → polylines permanentes
+      var d1 = ds[1].data;
+      var f1 = d1.fields.map(function(f) { return f.name; });
+      var segsByRoute = {};
+      d1.allData.forEach(function(row) {
+        var obj = {}; f1.forEach(function(f, i) { obj[f] = row[i]; });
+        if (!segsByRoute[obj.route]) segsByRoute[obj.route] = [];
+        segsByRoute[obj.route].push(obj);
+      });
+
+      Object.keys(segsByRoute).forEach(function(rname) {
+        var segs = segsByRoute[rname].slice().sort(function(a, b) { return a.segment - b.segment; });
+        var latlngs = [];
+        segs.forEach(function(s) {
+          if (!latlngs.length) latlngs.push([s.lat_start, s.lng_start]);
+          latlngs.push([s.lat_end, s.lng_end]);
+        });
+        var color = segs[0].color_hex;
+        var info  = routeInfo[rname] || {};
+
+        L.polyline(latlngs, { color: color, weight: 4, opacity: 0.9 })
+          .bindPopup(
+            "<strong>" + rname + "</strong><br>" +
+            "Statut : " + (info.status_2024 || "?") + "<br>" +
+            "Traversées (pic) : " + (info.crossings_peak ? info.crossings_peak.toLocaleString() : "?")
+          )
+          .addTo(routeLayer);
+
+        latlngs.forEach(function(ll) {
+          L.circleMarker(ll, {
+            radius: 5, color: color, fillColor: color, fillOpacity: 0.85, weight: 1
+          }).addTo(routeLayer);
+        });
+      });
+
+      // DS2 : incidents indexés par année
+      var d2 = ds[2].data;
+      var f2 = d2.fields.map(function(f) { return f.name; });
+      var incidentsByYear = {};
+
+      var coordIdx = -1;
+      if (d2.allData[0]) {
+        d2.allData[0].forEach(function(val, i) {
+          if (coordIdx === -1 && typeof val === "string" && /^-?\d+\.\d+,\s*-?\d+\.\d+$/.test((val || "").trim()))
+            coordIdx = i;
+        });
+      }
+
+      d2.allData.forEach(function(row) {
+        var yr = parseInt(row[5]);
+        if (!yr || isNaN(yr) || coordIdx < 0) return;
+        var parts = (row[coordIdx] || "").split(",");
+        var lat = parseFloat(parts[0]), lon = parseFloat(parts[1]);
+        if (isNaN(lat) || isNaN(lon)) return;
+        var deaths = parseInt(row[7]) || 0;
+        if (!incidentsByYear[yr]) incidentsByYear[yr] = [];
+        incidentsByYear[yr].push({
+          lat: lat, lon: lon, deaths: deaths,
+          date: row[4] || "", region: row[3] || "", cause: row[16] || ""
+        });
+      });
+
+      var years = Object.keys(incidentsByYear).map(Number).sort(function(a, b) { return a - b; });
+      var minY = years[0], maxY = years[years.length - 1];
+
+      var slider  = document.getElementById("slider");
+      var playBtn = document.getElementById("playBtn");
+      slider.min = minY; slider.max = maxY; slider.value = minY;
+      slider.disabled = false;
+      document.getElementById("minY").textContent = minY;
+      document.getElementById("maxY").textContent = maxY;
+      playBtn.disabled = false;
+
+      function updateMap(year) {
+        year = parseInt(year);
+        document.getElementById("yearLabel").textContent = "Année : " + year;
+        incidentLayer.clearLayers();
+        var incs = incidentsByYear[year] || [];
+        var totalDeaths = 0;
+        incs.forEach(function(inc) {
+          totalDeaths += inc.deaths;
+          L.circleMarker([inc.lat, inc.lon], {
+            radius: getRadius(inc.deaths),
+            color: "#8B0000", fillColor: "#CC3333", fillOpacity: 0.65, weight: 1
+          }).bindPopup(
+            "<strong>" + inc.deaths + " mort(s)</strong><br>" +
+            "<em>" + inc.date + "</em><br>" +
+            inc.region +
+            (inc.cause ? "<br>Cause : " + inc.cause : "")
+          ).addTo(incidentLayer);
+        });
+        document.getElementById("info").textContent =
+          incs.length + " incident(s) en " + year + " · " + totalDeaths.toLocaleString() + " mort(s) recensé(s)";
+      }
+
+      updateMap(minY);
+      slider.addEventListener("input", function() { updateMap(this.value); });
+
+      var interval = null;
+      playBtn.addEventListener("click", function() {
+        if (interval) { clearInterval(interval); interval = null; this.textContent = "▶ Lecture"; return; }
+        this.textContent = "⏸ Pause";
+        interval = setInterval(function() {
+          var v = parseInt(slider.value) + 1;
+          if (v > parseInt(slider.max)) {
+            clearInterval(interval); interval = null; playBtn.textContent = "▶ Lecture"; return;
+          }
+          slider.value = v; updateMap(v);
+        }, 800);
+      });
+    })
+    .catch(function(e) {
+      document.getElementById("yearLabel").textContent = "Erreur : " + e.message;
+    });
+}
+</script>
+</body>
+</html>
